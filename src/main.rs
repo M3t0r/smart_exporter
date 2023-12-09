@@ -81,18 +81,18 @@ mod smartctl {
         platform_info: String,
     }
 
-    pub mod device_scan {
+    pub mod scan {
         use std::option::Option;
         use std::vec::Vec;
         use std::path::PathBuf;
         use serde::{Deserialize, Serialize};
 
-        #[derive(Debug, Deserialize, Serialize)]
+        #[derive(Debug, Deserialize, Serialize, Clone)]
         pub struct Scan {
             pub devices: Vec<Device>,
         }
 
-        #[derive(Debug, Deserialize, Serialize)]
+        #[derive(Debug, Deserialize, Serialize, Clone)]
         pub struct Device {
             pub name: PathBuf,
             pub info_name: String,
@@ -100,16 +100,19 @@ mod smartctl {
             pub protocol: Protocol,
         }
 
-        #[derive(Debug, Deserialize, Serialize)]
+        #[derive(Debug, Deserialize, Serialize, Clone)]
         #[serde(rename_all = "lowercase")] 
         pub enum Type {
             Sat,
+            Nvme,
         }
 
-        #[derive(Debug, Deserialize, Serialize)]
+        #[derive(Debug, Deserialize, Serialize, Clone, Copy, Hash, PartialEq, Eq, prometheus_client::encoding::EncodeLabelValue)]
         #[serde(rename_all = "UPPERCASE")] 
         pub enum Protocol {
             Ata,
+            #[serde(rename = "NVMe")] 
+            NVMe,
         }
     }
 }
@@ -122,7 +125,10 @@ mod collector {
     use tokio::sync::oneshot;
     use tokio::task::JoinHandle;
     use prometheus_client::registry::Registry;
-    use prometheus_client::encoding::text::encode;
+    use prometheus_client::encoding::{EncodeLabelSet, text::encode};
+    use prometheus_client::metrics::info::Info;
+    use prometheus_client::metrics::gauge::Gauge;
+    use prometheus_client::metrics::family::Family;
     use slog::{error, debug, o};
 
     use crate::smartctl;
@@ -136,32 +142,116 @@ mod collector {
         last_read_version: Option<smartctl::Version>,
         device_rescan_interval: Duration,
         last_device_scan: Option<Instant>,
-        devices: Vec<smartctl::device_scan::Device>,
+        devices: Vec<Device>,
+        metrics: Metrics,
+    }
+
+    #[derive(Debug)]
+    pub struct Metrics {
+        smart_device_up: Family::<DeviceUpLabels, Gauge>,
+    }
+
+    impl Default for Metrics {
+        fn default() -> Self {
+            Self {
+                smart_device_up: Family::<DeviceUpLabels, Gauge>::default(),
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+    struct DeviceUpLabels {
+        path: String,
+        protocol: smartctl::scan::Protocol,
+    }
+
+    impl From<&Device> for DeviceUpLabels {
+        fn from(value: &Device) -> Self {
+            Self { 
+                path: String::from((*value).name.to_string_lossy()),
+                protocol: (*value).protocol
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+    struct InfoLabels {
+        version: String,
+    }
+
+    impl Default for InfoLabels {
+        fn default() -> Self {
+            Self{
+                version: env!("CARGO_PKG_VERSION").to_owned(), 
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct Device {
+        name: PathBuf,
+        protocol: smartctl::scan::Protocol,
+    }
+
+    impl Device {
+        pub async fn collect(&mut self) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    impl From<smartctl::scan::Device> for Device {
+        fn from(value: smartctl::scan::Device) -> Self {
+            Self { name: value.name, protocol: value.protocol }
+        }
     }
 
     impl Collector {
         pub fn new() -> Self {
+            let metrics = Metrics::default();
+            let mut registry = Registry::default();
+
+            registry.register(
+                "smartctl_exporter_info",
+                "",
+                Info::<InfoLabels>::new(InfoLabels::default()),
+            );
+            registry.register(
+                "smart_device_up",
+                "Information and availability of device",
+                metrics.smart_device_up.clone(),
+            );
+
             Self{
-                registry: Registry::default(),
+                registry,
                 last_read_version: None,
                 device_rescan_interval: Duration::from_secs(30),
                 last_device_scan: None,
                 devices: vec![],
+                metrics,
             }
         }
 
+        /// Collects all metrics from the system using smartclt and encodes it
+        /// into Prometheus text format
         pub async fn collect(&mut self, log: &slog::Logger) -> CollectResult {
             let now = Instant::now();
             if self.last_device_scan.is_none() || (now - self.last_device_scan.unwrap() > self.device_rescan_interval) {
                 self.last_device_scan = Some(now);
                 debug!(log, "re-scanning devices");
 
-                let (scan, last_read_version): (smartctl::device_scan::Scan, _) =
+                let (scan, last_read_version): (smartctl::scan::Scan, _) =
                     smartctl::call(["--scan-open"])
                         .map_err(|e| format!("failed to run smartctl: {:?}", e))?;
 
-                self.devices = scan.devices;
+                self.devices = scan.devices.into_iter().map(Into::into).collect();
                 self.last_read_version = Some(last_read_version);
+            }
+
+            self.metrics.smart_device_up.clear(); // reset all known disks
+            for d in &self.devices {
+                debug!(log, "device {:?}", d);
+                let labels = d.into();
+                self.metrics.smart_device_up.get_or_create(&labels).set(1);
             }
 
             let mut buffer = String::new();
@@ -214,17 +304,6 @@ mod collector {
             resp_rx
                 .await
                 .map_err(|e| format!("failed to communicate with collector worker (rx): {:?}", e))?
-        }
-    }
-
-    #[derive(Debug)]
-    pub struct Device {
-        name: PathBuf,
-    }
-
-    impl Device {
-        pub async fn collect(&mut self) -> Result<(), String> {
-            Ok(())
         }
     }
 }
@@ -351,7 +430,7 @@ async fn main() {
     //  - sudo available and configured
     //  - smartctl installed with json support
     //  - disk access granted
-    let (_, _): (smartctl::device_scan::Scan, _) = smartctl::call(["--scan-open"])
+    let (_, _): (smartctl::scan::Scan, _) = smartctl::call(["--scan-open"])
         .expect("initial run of smartctl failed");
 
     let mut collector = collector::Collector::new();
