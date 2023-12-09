@@ -6,26 +6,42 @@ mod smartctl {
     use std::vec::Vec;
     use serde::{de::DeserializeOwned, Deserialize, Serialize};
     use serde_json;
+    use anyhow::{Context, Result, bail};
 
     use std::process::Command;
     use std::ffi::OsStr;
 
     const SUPPORTED_JSON_FORMAT_VERSION: &[u8] = &[1, 0];
 
-    pub fn call<I, S, O>(args: I) -> std::io::Result<(O, Version)>
+    pub fn call<I, S, O>(args: I) -> Result<(O, Version)>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
         O: Serialize + DeserializeOwned,
     {
-        let output = Command::new("sudo")
+        let mut cmd = Command::new("sudo");
+        cmd
             .env_clear()
             .env("PATH", "/bin/:/sbin/:/usr/bin/:/usr/sbin/")
+            .args(["--non-interactive", "--"])
             .args(["smartctl", "--json"])
-            .args(args)
-            .output()?;
+            .args(args);
+        let output = cmd.output()?;
 
-        let parsed: Output<O> = serde_json::from_slice(&output.stdout).expect("failed to parse smartctl output");
+        if !output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!(
+                "failed to execute {:?}: {}\n{}\n{}",
+                cmd,
+                output.status,
+                stdout,
+                stderr,
+            );
+        }
+
+        let parsed: Output<O> = serde_json::from_slice(&output.stdout)
+            .context("failed to parse smartctl output")?;
 
         if parsed.json_format_version != SUPPORTED_JSON_FORMAT_VERSION {
             eprintln!(
@@ -336,7 +352,7 @@ async fn main() {
     //  - smartctl installed with json support
     //  - disk access granted
     let (_, _): (smartctl::device_scan::Scan, _) = smartctl::call(["--scan-open"])
-        .expect("failed to run smartctl");
+        .expect("initial run of smartctl failed");
 
     let mut collector = collector::Collector::new();
     collector.collect(&log).await.expect("first S.M.A.R.T. collection failed");
