@@ -45,7 +45,7 @@ impl Server {
     }
 
     pub async fn run(self) -> Result<(),String>{
-        Ok(self.http_server.await?)
+        self.http_server.await
     }
 }
 
@@ -90,7 +90,7 @@ async fn metrics_handler(
 {
     let collector = &rqctx.context().collector;
 
-    let exposition = collector.clone().collect().await.map_err(|e| HttpError::for_internal_error(e))?;
+    let exposition = collector.clone().collect().await.map_err(HttpError::for_internal_error)?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)

@@ -30,17 +30,9 @@ where
     metrics: Metrics,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Metrics {
     smart_device_up: Family::<DeviceUpLabels, Gauge>,
-}
-
-impl Default for Metrics {
-    fn default() -> Self {
-        Self {
-            smart_device_up: Family::<DeviceUpLabels, Gauge>::default(),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
@@ -52,8 +44,8 @@ struct DeviceUpLabels {
 impl From<&Device> for DeviceUpLabels {
     fn from(value: &Device) -> Self {
         Self { 
-            path: String::from((*value).name.to_string_lossy()),
-            protocol: (*value).protocol
+            path: String::from((value).name.to_string_lossy()),
+            protocol: (value).protocol
         }
     }
 }
@@ -167,7 +159,7 @@ where
             }
         });
 
-        return (Client{channel: tx}, handle);
+        (Client{channel: tx}, handle)
     }
 }
 

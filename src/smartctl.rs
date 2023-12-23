@@ -98,7 +98,7 @@ impl SmartctlInvoker for FileInvoker {
         let mut normalized_arg: String = args.into_iter()
             .fold(String::new(), |acc, arg| acc + &arg.as_ref().to_string_lossy() + "_")
             .chars()
-            .map(|c| c.is_ascii_alphanumeric().then_some(c).unwrap_or('_'))
+            .map(|c| if c.is_ascii_alphanumeric() {c} else  {'_'})
             .collect();
         normalized_arg.pop(); // remove last '_'
 
@@ -192,6 +192,7 @@ pub mod scan {
     }
 }
 
+#[cfg(test)]
 mod test {
     use std::{path::{Path, PathBuf}, ffi::OsStr};
     use std::io::BufReader;

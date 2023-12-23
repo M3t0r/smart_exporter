@@ -1,8 +1,6 @@
 use std::path::Path;
 
 use slog::{Drain, o};
-use slog_term;
-use slog_async;
 
 pub mod smartctl;
 pub mod server;
