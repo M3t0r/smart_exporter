@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use slog::{Drain, o};
 use slog_term;
 use slog_async;
@@ -19,13 +21,14 @@ fn make_logger() -> slog::Logger {
 #[tokio::main]
 async fn main() {
     let log = make_logger();
-    let invoker = smartctl::SudoInvoker{};
+    let mut invoker = smartctl::FileInvoker::new(Path::new("./tests/simple/"));
+    //let mut invoker = smartctl::SudoInvoker{};
 
     // run once early on to check:
     //  - sudo available and configured
     //  - smartctl installed with json support
     //  - disk access granted
-    let (_, _): (smartctl::scan::Scan, _) = invoker.call(["--scan-open"])
+    let (_, _): (smartctl::scan::Scan, _) = invoker.call(&log, ["--scan-open"])
         .expect("initial run of smartctl failed");
 
     let mut collector = collector::Collector::with(invoker);

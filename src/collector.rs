@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::time::{Instant, Duration};
 
-use hyper::service::Service;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -129,7 +128,7 @@ where
             debug!(log, "re-scanning devices");
 
             let (scan, last_read_version): (smartctl::scan::Scan, _) =
-                self.invoker.call(["--scan-open"])
+                self.invoker.call(log, ["--scan-open"])
                     .map_err(|e| format!("failed to run smartctl: {:?}", e))?;
 
             self.devices = scan.devices.into_iter().map(Into::into).collect();
