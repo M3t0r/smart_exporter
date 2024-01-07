@@ -9,9 +9,10 @@ use prometheus_client::encoding::{EncodeLabelSet, text::encode};
 use prometheus_client::metrics::info::Info;
 use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::metrics::family::Family;
-use slog::{error, debug, o};
+use slog::{error, info, debug, o};
 
 use crate::smartctl;
+use crate::smartctl::stats::DeviceStats;
 
 pub type WorkerChannel = mpsc::Sender<oneshot::Sender<Result<String, String>>>;
 pub type CollectResult = Result<String, String>;
@@ -38,14 +39,40 @@ pub struct Metrics {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
 struct DeviceUpLabels {
     path: String,
-    protocol: smartctl::scan::Protocol,
+    protocol: smartctl::Protocol,
+    model_name: String,
+    model_family: String,
+    serial_number: String,
+    wwn_naa: u8,
+    wwn_oui: u32,
+    wwn_id: u64,
+    firmware_version: String,
+    in_smartctl_database: &'static str,
+    ata_version: String,
+    sata_version: String,
+    trim: &'static str,
+    smart_available: &'static str,
+    smart_enabled: &'static str,
 }
 
-impl From<&Device> for DeviceUpLabels {
-    fn from(value: &Device) -> Self {
+impl From<DeviceStats> for DeviceUpLabels {
+    fn from(value: DeviceStats) -> Self {
         Self { 
-            path: String::from((value).name.to_string_lossy()),
-            protocol: (value).protocol
+            path: String::from(value.device.name.to_string_lossy()),
+            protocol: value.device.protocol,
+            model_name: value.model_name.clone(),
+            model_family: value.model_family.clone(),
+            serial_number: value.serial_number.clone(),
+            wwn_naa: value.wwn.network_address_authority,
+            wwn_oui: value.wwn.organizationally_unique_identifier,
+            wwn_id: value.wwn.id,
+            firmware_version: value.firmware_version.clone(),
+            in_smartctl_database: if value.smart_support.enabled { "yes" } else { "no" },
+            ata_version: value.ata_version.string.clone(),
+            sata_version: value.sata_version.string.clone(),
+            trim: if value.trim.supported { "yes" } else { "no" },
+            smart_available: if value.smart_support.available { "yes" } else { "no" },
+            smart_enabled: if value.smart_support.enabled { "yes" } else { "no" },
         }
     }
 }
@@ -66,18 +93,11 @@ impl Default for InfoLabels {
 #[derive(Debug)]
 pub struct Device {
     name: PathBuf,
-    protocol: smartctl::scan::Protocol,
-}
-
-impl Device {
-    pub async fn collect(&mut self) -> Result<(), String> {
-        Ok(())
-    }
 }
 
 impl From<smartctl::scan::Device> for Device {
     fn from(value: smartctl::scan::Device) -> Self {
-        Self { name: value.name, protocol: value.protocol }
+        Self { name: value.name }
     }
 }
 
@@ -117,7 +137,7 @@ where
         let now = Instant::now();
         if self.last_device_scan.is_none() || (now - self.last_device_scan.unwrap() > self.device_rescan_interval) {
             self.last_device_scan = Some(now);
-            debug!(log, "re-scanning devices");
+            info!(log, "re-scanning devices");
 
             let (scan, last_read_version): (smartctl::scan::Scan, _) =
                 self.invoker.call(log, ["--scan-open"])
@@ -129,9 +149,14 @@ where
 
         self.metrics.smart_device_up.clear(); // reset all known disks
         for d in &self.devices {
-            debug!(log, "device {:?}", d);
-            let labels = d.into();
-            self.metrics.smart_device_up.get_or_create(&labels).set(1);
+            let dev_path = d.name.to_string_lossy();
+            info!(log, "collecting stats for device"; "device" => dev_path.as_ref());
+
+            let (stats, _): (smartctl::stats::DeviceStats, _) =
+                self.invoker.call(log, ["--all", dev_path.as_ref()])
+                .map_err(|e| format!("failed to collect device stats: {:?}", e))?;
+
+            self.metrics.smart_device_up.get_or_create(&stats.into()).set(1);
         }
 
         let mut buffer = String::new();
