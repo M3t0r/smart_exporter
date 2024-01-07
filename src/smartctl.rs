@@ -37,8 +37,12 @@ pub trait SmartctlInvoker {
             );
         }
 
-        let parsed: Output<O> = serde_json::from_slice(&output.stdout)
-            .context("failed to parse smartctl output")?;
+        let deser = &mut serde_json::Deserializer::from_slice(&output.stdout);
+        let parsed: Output<O> = serde_path_to_error::deserialize(deser)
+            .map_err(|e| {
+                let c = format!("failed to parse smartctl output, JSON path: {}", e.path().to_string());
+                anyhow::Error::new(e).context(c)
+            })?;
 
         if parsed.json_format_version != SUPPORTED_JSON_FORMAT_VERSION {
             eprintln!(
