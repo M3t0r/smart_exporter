@@ -162,37 +162,188 @@ pub struct Version {
     platform_info: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct Device {
+    pub name: PathBuf,
+    pub info_name: String,
+    pub r#type: Type,
+    pub protocol: Protocol,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum Type {
+    Sat,
+    Nvme,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, Hash, PartialEq, Eq, prometheus_client::encoding::EncodeLabelValue)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum Protocol {
+    Ata,
+    #[serde(rename = "NVMe")]
+    NVMe,
+}
+
 pub mod scan {
+    pub use crate::smartctl::Device;
     use std::vec::Vec;
-    use std::path::PathBuf;
     use serde::{Deserialize, Serialize};
 
     #[derive(Debug, Deserialize, Serialize, Clone)]
     pub struct Scan {
         pub devices: Vec<Device>,
     }
+}
+
+pub mod stats {
+    use std::collections::HashMap;
+    use serde::{Deserialize, Serialize};
+    pub use crate::smartctl::Device;
 
     #[derive(Debug, Deserialize, Serialize, Clone)]
-    pub struct Device {
-        pub name: PathBuf,
-        pub info_name: String,
-        pub r#type: Type,
-        pub protocol: Protocol,
+    pub struct DeviceStats {
+        pub device: Device,
+        pub model_family: String,
+        pub model_name: String,
+        pub serial_number: String,
+        pub wwn: WorldWideName,
+
+        pub firmware_version: String,
+        pub ata_version: ATAVersion,
+        pub sata_version: SATAVersion,
+        pub in_smartctl_database: bool,
+
+        pub smart_status: Status,
+        pub smart_support: Support,
+
+        // pub ata_sct_capabilities: String,
+        pub ata_smart_attributes: Attributes,
+        // pub ata_smart_data: String,
+        // pub ata_smart_error_log: String,
+        // pub ata_smart_selective_self_test_log: String,
+        // pub ata_smart_self_test_log: String,
+
+        pub power_on_time: PowerOnTime,
+        pub power_cycle_count: u64,
+        pub temperature: Temperature,
+        pub rotation_rate: u16,
+        pub interface_speed: InterfaceSpeed,
+        pub trim: Trim,
+        pub user_capacity: UserCapacity,
+        pub logical_block_size: u16,
+        pub physical_block_size: u16,
+
+        // intentionally unused fields: local_time
+
+        #[serde(flatten)]
+        pub extra_fields: HashMap<String, serde_json::Value>,
+    }
+
+    /// https://en.wikipedia.org/wiki/World_Wide_Name
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct WorldWideName {
+        #[serde(rename = "naa")]
+        pub network_address_authority: u8, // 4 bits
+        #[serde(rename = "oui")]
+        pub organizationally_unique_identifier: u32, // 24 bit, https://en.wikipedia.org/wiki/Organizationally_unique_identifier
+        pub id: u64,
     }
 
     #[derive(Debug, Deserialize, Serialize, Clone)]
-    #[serde(rename_all = "lowercase")] 
-    pub enum Type {
-        Sat,
-        Nvme,
+    pub struct Status {
+        pub passed: bool,
     }
 
-    #[derive(Debug, Deserialize, Serialize, Clone, Copy, Hash, PartialEq, Eq, prometheus_client::encoding::EncodeLabelValue)]
-    #[serde(rename_all = "UPPERCASE")] 
-    pub enum Protocol {
-        Ata,
-        #[serde(rename = "NVMe")] 
-        NVMe,
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct ATAVersion {
+        pub string: String,
+        #[serde(rename="major_value")]
+        pub major: u64,
+        #[serde(rename="minor_value")]
+        pub minor: u64,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct SATAVersion {
+        pub string: String,
+        pub value: u64,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct Support {
+        pub available: bool,
+        pub enabled: bool,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct Attributes {
+        pub revision: u16,
+        pub table: Vec<Attribute>,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct Attribute {
+        pub id: u16,
+        pub name: String,
+        #[serde(rename="value")]
+        pub current: u8,
+        pub worst: u8,
+        #[serde(rename="thresh")]
+        pub threshold: u8,
+        pub flags: Flags,
+        pub raw: RawAttributeValue,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct Flags {
+        pub prefailure: bool,
+        pub updated_online: bool,
+        pub performance: bool,
+        pub error_rate: bool,
+        pub event_count: bool,
+        pub auto_keep: bool,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct RawAttributeValue {
+        pub value: u64,
+        pub string: String,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct PowerOnTime {
+        pub hours: u64,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct Temperature {
+        pub current: u64,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct InterfaceSpeed {
+        pub current: OneInterfaceSpeed,
+        pub max: OneInterfaceSpeed,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct OneInterfaceSpeed {
+        pub sata_value: u8,
+        pub string: String,
+        pub units_per_second: u64,
+        pub bits_per_unit: u64,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct Trim {
+        pub supported: bool,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, Clone)]
+    pub struct UserCapacity {
+        pub blocks: u64,
+        pub bytes: u64,
     }
 }
 
@@ -232,6 +383,8 @@ mod test {
             .filter(|f| f.is_file() && f.extension() == Some(OsStr::new("stdout")))
             .collect();
 
+        println!("found fixtures: {}", fixtures.len());
+
         for f in fixtures {
             let reader = BufReader::new(File::open(&f)?);
             let json: serde_json::Value = serde_json::from_reader(reader)?;
@@ -265,5 +418,28 @@ mod test {
         let r: anyhow::Result<(crate::smartctl::scan::Scan, _)> = invoker.call(&log, ["--scan-open"]);
 
         assert!(r.is_err());
+    }
+
+    #[test]
+    fn parse_device_scan() {
+        let log = crate::make_logger();
+        let mut invoker = super::FileInvoker::new(Path::new("tests/simple/"));
+
+        let (_scan, _version): (crate::smartctl::scan::Scan, _) = invoker.call(&log, ["--scan-open"]).expect("could not parse simple/ scan");
+    }
+
+    #[test]
+    fn parse_device_stats() {
+        let log = crate::make_logger();
+        let mut invoker = super::FileInvoker::new(Path::new("tests/simple/"));
+
+        for dev in ["/dev/sda", "/dev/sdb", "/dev/sdc"] {
+            let (stats, _version): (crate::smartctl::stats::DeviceStats, _) = invoker
+                .call(&log, ["--all", &dev])
+                .expect(format!("could not parse simple/ stats for {}", dev).as_str());
+
+            dbg!(dev, stats.extra_fields.keys());
+            assert_eq!(stats.extra_fields.len(), 1, "additional fields found"); // one intentionally unused field
+        }
     }
 }
