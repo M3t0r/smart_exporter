@@ -318,7 +318,7 @@ pub mod stats {
 
     #[derive(Debug, Deserialize, Serialize, Clone)]
     pub struct Temperature {
-        pub current: u64,
+        pub current: i64,
     }
 
     #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -331,8 +331,8 @@ pub mod stats {
     pub struct OneInterfaceSpeed {
         pub sata_value: u8,
         pub string: String,
-        pub units_per_second: u64,
-        pub bits_per_unit: u64,
+        pub units_per_second: u32,
+        pub bits_per_unit: u32,
     }
 
     #[derive(Debug, Deserialize, Serialize, Clone)]
