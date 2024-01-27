@@ -1,1 +1,1 @@
-%smart_exporter All = NOPASSWD: /usr/sbin/smartctl
+%smart_exporter ALL = NOPASSWD: /usr/sbin/smartctl
