@@ -7,8 +7,6 @@ pub mod smartctl;
 pub mod server;
 pub mod collector;
 
-use crate::smartctl::SmartctlInvoker;
-
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum InvokerChoice {
     /// call smartctl directly
@@ -48,20 +46,50 @@ async fn main() {
     let args = CLIOptions::parse();
 
     let log = make_logger();
-    //let mut invoker = smartctl::FileInvoker::new(PathBuf::new("./tests/simple/"));
-    let mut invoker = smartctl::SudoInvoker{};
 
-    // run once early on to check:
-    //  - sudo available and configured
-    //  - smartctl installed with json support
-    //  - disk access granted
-    let (_, _): (smartctl::scan::Scan, _) = invoker.call(&log, ["--scan-open"])
-        .expect("initial run of smartctl failed");
+    // Repeating the same instructions here is ugly, but I can't Box the
+    // Invoker because on of the Trait functions would have a generic return
+    // type, and I can't Box the Collector because apparently you can't build
+    // a vtable for Traits with async functions...
+    // If you can solve this puzzle please let me know!
+    let (collector_channel, collector_worker) = match args.invoker {
+        InvokerChoice::Standard => {
+            let invoker = smartctl::NormalInvoker{};
+            let mut collector = collector::Collector::with(invoker);
 
-    let mut collector = collector::Collector::with(invoker);
-    collector.collect(&log).await.expect("first S.M.A.R.T. collection failed");
+            // run once early on to check:
+            //  - sudo available and configured
+            //  - smartctl installed with json support
+            //  - disk access granted
+            collector.collect(&log).await.expect("first S.M.A.R.T. collection failed");
 
-    let (collector_channel, collector_worker) = collector.start_worker(&log);
+            collector.start_worker(&log)
+        },
+        InvokerChoice::Sudo => {
+            let invoker = smartctl::SudoInvoker{};
+            let mut collector = collector::Collector::with(invoker);
+
+            // run once early on to check:
+            //  - sudo available and configured
+            //  - smartctl installed with json support
+            //  - disk access granted
+            collector.collect(&log).await.expect("first S.M.A.R.T. collection failed");
+
+            collector.start_worker(&log)
+        },
+        InvokerChoice::File => {
+            let invoker = smartctl::FileInvoker::new(&args.file_invoker_path);
+            let mut collector = collector::Collector::with(invoker);
+
+            // run once early on to check:
+            //  - sudo available and configured
+            //  - smartctl installed with json support
+            //  - disk access granted
+            collector.collect(&log).await.expect("first S.M.A.R.T. collection failed");
+
+            collector.start_worker(&log)
+        },
+    };
 
     let server = server::Server::new(
         collector_channel,

@@ -295,7 +295,6 @@ where
         let handle = tokio::spawn(async move {
             while let Some(return_channel) = rx.recv().await {
                 debug!(log, "got collect request in worker task");
-                debug!(log, "{:?}", self);
                 let collect_result = self.collect(&log).await;
                 if let Err(e) = return_channel.send(collect_result) {
                     error!(log, "failed to send response to client"; "error" => format!("{:?}", e));

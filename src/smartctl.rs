@@ -61,6 +61,25 @@ pub trait SmartctlInvoker {
 }
 
 #[derive(Debug)]
+pub struct NormalInvoker {}
+
+impl SmartctlInvoker for NormalInvoker{
+    fn construct_command<I, S>(&mut self, _: &slog::Logger, args: I) -> Command
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>
+    {
+        let mut cmd = Command::new("smartctl");
+        cmd
+            .env_clear()
+            .env("PATH", "/bin/:/sbin/:/usr/bin/:/usr/sbin/")
+            .args(["--json"])
+            .args(args);
+        cmd
+    }
+}
+
+#[derive(Debug)]
 pub struct SudoInvoker {}
 
 impl SmartctlInvoker for SudoInvoker{
@@ -79,7 +98,6 @@ impl SmartctlInvoker for SudoInvoker{
         cmd
     }
 }
-
 
 #[derive(Debug)]
 pub struct FileInvoker {
