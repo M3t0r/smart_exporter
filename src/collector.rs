@@ -141,7 +141,7 @@ where
         let mut registry = Registry::default();
 
         registry.register(
-            "smartctl_exporter_info",
+            "smartctl_exporter",
             "",
             Info::<InfoLabels>::new(InfoLabels::default()),
         );
