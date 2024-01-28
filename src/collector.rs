@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::time::{Instant, Duration};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{Ordering, AtomicU64};
 
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -39,8 +39,8 @@ pub struct Metrics {
     power_on_hours: Family::<DeviceUnqiueLabels, Counter>,
     power_cycle_count: Family::<DeviceUnqiueLabels, Counter>,
     temperature_celsius: Family::<DeviceUnqiueLabels, Gauge>,
-    bytes_total: Family::<DeviceUnqiueLabels, Gauge>,
-    blocks_total: Family::<DeviceUnqiueLabels, Gauge>,
+    bytes_total: Family::<DeviceUnqiueLabels, Gauge<f64, AtomicU64>>,
+    blocks_total: Family::<DeviceUnqiueLabels, Gauge<f64, AtomicU64>>,
     rotations_per_minute: Family::<DeviceUnqiueLabels, Gauge>,
     logical_block_size: Family::<DeviceUnqiueLabels, Gauge>,
     physical_block_size: Family::<DeviceUnqiueLabels, Gauge>,
@@ -168,12 +168,12 @@ where
         );
         registry.register(
             "smart_device_bytes_total",
-            "",
+            "(unsigned 64-bit integer transmitted as 64-bit floting point number, can be imprecise)",
             metrics.bytes_total.clone(),
         );
         registry.register(
             "smart_device_blocks_total",
-            "",
+            "(unsigned 64-bit integer transmitted as 64-bit floting point number, can be imprecise)",
             metrics.blocks_total.clone(),
         );
         registry.register(
@@ -257,8 +257,8 @@ where
             self.metrics.power_on_hours.get_or_create(&labels).inner().store(stats.power_on_time.hours, Ordering::Relaxed);
             self.metrics.power_cycle_count.get_or_create(&labels).inner().store(stats.power_cycle_count, Ordering::Relaxed);
             self.metrics.temperature_celsius.get_or_create(&labels).set(stats.temperature.current);
-            self.metrics.bytes_total.get_or_create(&labels).set(stats.user_capacity.bytes.try_into().expect("too many bytes capacity (failed to convert u64 to i64)"));
-            self.metrics.blocks_total.get_or_create(&labels).set(stats.user_capacity.blocks.try_into().expect("too many blocks capacity (failed to convert u64 to i64)"));
+            self.metrics.bytes_total.get_or_create(&labels).set(stats.user_capacity.bytes as f64);
+            self.metrics.blocks_total.get_or_create(&labels).set(stats.user_capacity.blocks as f64);
             self.metrics.rotations_per_minute.get_or_create(&labels).set(stats.rotation_rate.into());
             self.metrics.logical_block_size.get_or_create(&labels).set(stats.logical_block_size.into());
             self.metrics.physical_block_size.get_or_create(&labels).set(stats.physical_block_size.into());
