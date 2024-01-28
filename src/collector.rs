@@ -14,7 +14,9 @@ use prometheus_client::metrics::family::Family;
 use slog::{error, info, debug, o};
 
 use crate::smartctl;
-use crate::smartctl::stats::DeviceStats;
+use crate::smartctl::stats::{DeviceStats, Attribute};
+
+use self::prometheus_client_shortcomings::Bool;
 
 pub type WorkerChannel = mpsc::Sender<oneshot::Sender<Result<String, String>>>;
 pub type CollectResult = Result<String, String>;
@@ -46,6 +48,10 @@ pub struct Metrics {
     physical_block_size: Family::<DeviceUnqiueLabels, Gauge>,
     interface_bytes_per_unit: Family::<InterfaceSpeedLabels, Gauge>,
     interface_units_per_second: Family::<InterfaceSpeedLabels, Gauge>,
+    attribute_value: Family::<AttributeLabels, Gauge>,
+    attribute_value_worst: Family::<AttributeLabels, Gauge>,
+    attribute_value_threshold: Family::<AttributeLabels, Gauge>,
+    attribute_value_raw: Family::<AttributeLabels, Gauge<f64, AtomicU64>>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
@@ -106,6 +112,35 @@ impl From<DeviceStats> for DeviceUnqiueLabels {
 struct InterfaceSpeedLabels {
     path: String,
     interface: &'static str,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
+struct AttributeLabels {
+    path: String,
+    id: u16,
+    name: String,
+    prefailure: Bool,
+    updated_online: Bool,
+    performance: Bool,
+    error_rate: Bool,
+    event_count: Bool,
+    auto_keep: Bool,
+}
+
+impl AttributeLabels {
+    fn from(value: &Attribute, device_name: String) -> Self {
+        Self {
+            path: device_name,
+            id: value.id,
+            name: value.name.to_string(),
+            prefailure: value.flags.prefailure.into(),
+            updated_online: value.flags.updated_online.into(),
+            performance: value.flags.performance.into(),
+            error_rate: value.flags.error_rate.into(),
+            event_count: value.flags.event_count.into(),
+            auto_keep: value.flags.auto_keep.into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
@@ -201,6 +236,26 @@ where
             "",
             metrics.interface_units_per_second.clone(),
         );
+        registry.register(
+            "smart_device_attribute_value",
+            "",
+            metrics.attribute_value.clone(),
+        );
+        registry.register(
+            "smart_device_attribute_value_worst",
+            "",
+            metrics.attribute_value_worst.clone(),
+        );
+        registry.register(
+            "smart_device_attribute_value_threshold",
+            "",
+            metrics.attribute_value_threshold.clone(),
+        );
+        registry.register(
+            "smart_device_attribute_value_raw",
+            "(unsigned 64-bit integer transmitted as 64-bit floting point number, can be imprecise)",
+            metrics.attribute_value_raw.clone(),
+        );
 
         Self{
             invoker,
@@ -276,6 +331,21 @@ where
             self.metrics.interface_units_per_second.get_or_create(
                 &InterfaceSpeedLabels { path: dev_path.to_string(), interface: "interface" }
             ).set((stats.interface_speed.max.units_per_second).into());
+
+            for attr in stats.ata_smart_attributes.table {
+                self.metrics.attribute_value.get_or_create(
+                    &AttributeLabels::from(&attr, dev_path.to_string())
+                ).set(attr.current.into());
+                self.metrics.attribute_value_worst.get_or_create(
+                    &AttributeLabels::from(&attr, dev_path.to_string())
+                ).set(attr.worst.into());
+                self.metrics.attribute_value_threshold.get_or_create(
+                    &AttributeLabels::from(&attr, dev_path.to_string())
+                ).set(attr.threshold.into());
+                self.metrics.attribute_value_raw.get_or_create(
+                    &AttributeLabels::from(&attr, dev_path.to_string())
+                ).set(attr.raw.value as f64);
+            }
         }
 
         let mut buffer = String::new();
@@ -330,11 +400,13 @@ impl Client {
     }
 }
 
-mod missing_atomics {
+mod prometheus_client_shortcomings {
     /// prometheus_client doesn't implement it's Atomic trait for a couple pairings that we are
-    /// using
+    /// using.
+    /// EncodeLabelValue isn't implemented for bools either.
     use std::sync::atomic::{AtomicU64 as OtherAtomicU64, AtomicU16 as OtherAtomicU16, Ordering};
     use prometheus_client::metrics::gauge::Atomic;
+    use prometheus_client::encoding::{EncodeLabelValue, LabelValueEncoder};
 
     #[derive(Default, Debug)]
     pub struct AtomicU16(OtherAtomicU16);
@@ -389,6 +461,19 @@ mod missing_atomics {
 
         fn get(&self) -> u64 {
             self.0.load(Ordering::Relaxed)
+        }
+    }
+
+    #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+    pub struct Bool(bool);
+    impl From<bool> for Bool {
+        fn from(value: bool) -> Self {
+            Self(value)
+        }
+    }
+    impl EncodeLabelValue for Bool {
+        fn encode(&self, encoder: &mut LabelValueEncoder) -> Result<(), std::fmt::Error> {
+            EncodeLabelValue::encode(&self.0.to_string(), encoder)
         }
     }
 }
