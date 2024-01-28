@@ -1,1 +1,6 @@
-%smart_exporter ALL = NOPASSWD: /usr/sbin/smartctl
+# install like this:
+#     sudo install -m440 ./smart_exporter.sudoers /etc/sudoers.d/smart_exporter
+# check with
+#     sudo visudo --check
+# make sure the file in sudoers.d doesn't have a dot in the name...
+%smart_exporter ALL=NOPASSWD: /usr/sbin/smartctl

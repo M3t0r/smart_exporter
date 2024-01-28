@@ -39,7 +39,7 @@ RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
 
 COPY --from=builder "/src/smart_exporter" /usr/bin/smart_exporter
 
-COPY ./smart_exporter.sudoers /etc/sudoers.d/
+COPY --chmod=440 ./smart_exporter.sudoers /etc/sudoers.d/smart_exporter
 
 WORKDIR /
 ENTRYPOINT ["smart_exporter"]
