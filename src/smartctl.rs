@@ -425,7 +425,7 @@ mod test {
         let (scan, version): (crate::smartctl::scan::Scan, _) = invoker.call(&log, ["--scan-open"]).expect("could not parse simple/ scan");
 
         assert_eq!(version.version, vec![7, 4]);
-        assert_eq!(scan.devices.len(), 3);
+        assert_eq!(scan.devices.len(), 5);
     }
 
     #[test]
@@ -450,8 +450,9 @@ mod test {
     fn parse_device_stats() {
         let log = crate::make_logger();
         let mut invoker = super::FileInvoker::new(Path::new("tests/simple/"));
+        let (scan, _): (crate::smartctl::scan::Scan, _) = invoker.call(&log, ["--scan-open"]).expect("could not parse simple/ scan");
 
-        for dev in ["/dev/sda", "/dev/sdb", "/dev/sdc"] {
+        for dev in scan.devices.iter().map(|d| d.name.as_os_str().to_string_lossy()) {
             let (stats, _version): (crate::smartctl::stats::DeviceStats, _) = invoker
                 .call(&log, ["--all", &dev])
                 .expect(format!("could not parse simple/ stats for {}", dev).as_str());

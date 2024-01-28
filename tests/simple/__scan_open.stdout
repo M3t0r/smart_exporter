@@ -37,6 +37,18 @@
       "info_name": "/dev/sdc [SAT]",
       "type": "sat",
       "protocol": "ATA"
+    },
+    {
+      "name": "/dev/sdd",
+      "info_name": "/dev/sdd [SAT]",
+      "type": "sat",
+      "protocol": "ATA"
+    },
+    {
+      "name": "/dev/sde",
+      "info_name": "/dev/sde [SAT]",
+      "type": "sat",
+      "protocol": "ATA"
     }
   ]
 }
