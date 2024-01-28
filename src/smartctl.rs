@@ -222,7 +222,7 @@ pub mod stats {
     #[derive(Debug, Deserialize, Serialize, Clone)]
     pub struct DeviceStats {
         pub device: Device,
-        pub model_family: String,
+        pub model_family: Option<String>,
         pub model_name: String,
         pub serial_number: String,
         pub wwn: WorldWideName,
