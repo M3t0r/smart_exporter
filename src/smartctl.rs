@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::vec::Vec;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json;
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use slog::debug;
 
 use std::process::Command;
@@ -40,7 +40,7 @@ pub trait SmartctlInvoker {
         let deser = &mut serde_json::Deserializer::from_slice(&output.stdout);
         let parsed: Output<O> = serde_path_to_error::deserialize(deser)
             .map_err(|e| {
-                let c = format!("failed to parse smartctl output, JSON path: {}", e.path().to_string());
+                let c = format!("failed to parse smartctl output, JSON path: {}", e.path());
                 anyhow::Error::new(e).context(c)
             })?;
 

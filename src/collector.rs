@@ -79,7 +79,7 @@ impl From<DeviceStats> for DeviceUpLabels {
             path: String::from(value.device.name.to_string_lossy()),
             protocol: value.device.protocol,
             model_name: value.model_name.clone(),
-            model_family: value.model_family.unwrap_or(String::default()).clone(),
+            model_family: value.model_family.unwrap_or_default().clone(),
             serial_number: value.serial_number.clone(),
             wwn_naa: value.wwn.network_address_authority,
             wwn_oui: value.wwn.organizationally_unique_identifier,
