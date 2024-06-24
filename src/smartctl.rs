@@ -25,7 +25,7 @@ pub trait SmartctlInvoker {
         let mut cmd = self.construct_command(log, args);
         let output = cmd.output()?;
 
-        if !output.status.success() {
+        if (output.status & 0b00000111) != 0 {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!(
