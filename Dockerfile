@@ -1,4 +1,4 @@
-FROM rust:slim-trixie as chef
+FROM rust:slim-trixie@sha256:d6782f2b326a10eaf593eb90cafc34a03a287b4a25fe4d0c693c90304b06f6d7 as chef
 
 WORKDIR /src
 ENV CARGO_TERM_COLOR=always
@@ -28,7 +28,7 @@ RUN cargo build \
     --bin smart_exporter \
     --profile=${PROFILE}
 
-FROM debian:trixie as final
+FROM debian:trixie@sha256:3615a749858a1cba49b408fb49c37093db813321355a9ab7c1f9f4836341e9db as final
 
 ARG PROFILE=release
 
