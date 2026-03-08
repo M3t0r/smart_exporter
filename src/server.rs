@@ -1,11 +1,10 @@
 use std::net::SocketAddr;
 
 use dropshot::{
-    endpoint, ApiDescription, ConfigDropshot, HttpError, HttpServer, HttpServerStarter,
+    endpoint, ApiDescription, Body, ConfigDropshot, HttpError, HttpServer, HttpServerStarter,
     RequestContext,
 };
 use http::{Response, StatusCode};
-use hyper::Body;
 
 use crate::collector::Client as CollectorClient;
 
@@ -33,8 +32,8 @@ impl Server {
         let http_server = HttpServerStarter::<ServerContext>::new(
             &ConfigDropshot {
                 bind_address,
-                request_body_max_bytes: 0,
-                tls: None,
+                default_request_body_max_bytes: 0,
+                ..Default::default()
             },
             api,
             ctx,
