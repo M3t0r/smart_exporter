@@ -1,0 +1,104 @@
+version: "3"
+
+set:
+  - errexit
+  - nounset
+  - pipefail
+
+vars:
+  PACKAGE_NAME:
+    sh: cargo metadata --format-version=1 --no-deps | jq -r '.packages[0].name'
+  VERSION:
+    sh: cargo metadata --format-version=1 --no-deps | jq -r '.packages[0].version'
+  IMAGE_REPOSITORY: '{{.IMAGE_REGISTRY | default "ghcr.io/m3t0r"}}/{{.PACKAGE_NAME}}'
+  IMAGE: "{{.IMAGE_REPOSITORY}}:{{.VERSION}}"
+  IMAGE_PLATFORMS: linux/amd64,linux/arm64
+
+tasks:
+  default:
+    desc: List available tasks
+    cmd: task --list-all
+    silent: true
+
+  ci:
+    desc: Run the CI task set
+    cmds:
+      - task: check
+      - task: build
+
+  build:binary:
+    aliases: [build]
+    cmd: cargo build --release --locked --color=always
+    sources:
+      - Cargo.toml
+      - Cargo.lock
+      - src/**/*.rs
+    generates:
+      - target/release/smart_exporter
+
+  build:image:
+    sources:
+      - Dockerfile
+      - Cargo.toml
+      - Cargo.lock
+      - src/**/*.rs
+      - smart_exporter.sudoers
+    status:
+      - |
+        podman manifest inspect {{.IMAGE}} \
+        | jq -er 'if has("manifests") then .manifests[].digest else .digest end' \
+        | while IFS= read -r digest; do
+          podman images --digests --format json \
+          | jq -e --arg digest "$digest" --arg checksum "{{.CHECKSUM}}" \
+            'any(.[]; .Digest == $digest and .Labels.sources_checksum == $checksum)'
+        done
+    cmds:
+      - podman manifest rm {{.IMAGE}} >/dev/null 2>&1 || true
+      - |
+        podman build \
+          --label sources_checksum={{.CHECKSUM}} \
+          --label org.opencontainers.image.created="$(date --iso-8601=seconds)" \
+          --label org.opencontainers.image.version={{.VERSION}} \
+          --label org.opencontainers.image.revision="$(git rev-parse HEAD)" \
+          --build-arg PROFILE=release \
+          --platform {{.IMAGE_PLATFORMS}} \
+          --manifest {{.IMAGE}} .
+
+  publish:image:
+    deps:
+      - task: build:image
+    cmd: podman manifest push {{.IMAGE}}
+
+  check:
+    desc: Run the local verification suite
+    deps:
+      - task: check:fmt
+      - task: check:cargo
+      - task: check:lint
+      - task: check:test
+
+  check:fmt:
+    desc: Verify Rust formatting
+    cmd: cargo fmt --all --check
+    preconditions:
+      - sh: command -v cargo >/dev/null
+        msg: cargo is required
+
+  check:cargo:
+    desc: Run cargo check across all targets
+    cmd: cargo check --locked --all-targets --color=always
+
+  check:lint:
+    desc: Run clippy with warnings denied
+    cmd: cargo clippy --locked --all-targets --color=always -- -D warnings
+
+  check:test:
+    aliases:
+      - test
+    cmd: cargo test --locked --color=always -- {{.CLI_ARGS}}
+
+  fix:fmt:
+    cmd: cargo fmt --all
+
+  fix:lint:
+    cmd: cargo clippy --fix --allow-dirty --allow-staged --locked --all-targets --color=always -- -D warnings

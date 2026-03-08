@@ -30,12 +30,9 @@ RUN cargo build \
 
 FROM debian:trixie as final
 
-ARG VERSION
-ARG TARGETOS TARGETARCH
 ARG PROFILE=release
 
 LABEL application=smart_exporter \
-      version=${VERSION} \
       maintainer=M3t0r
 
 RUN groupadd --force --gid 1000 smart_exporter
