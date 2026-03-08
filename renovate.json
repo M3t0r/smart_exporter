@@ -1,6 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
-  ]
+    "config:best-practices",
+    "github>m3t0r/renovate-presets:f-semantic",
+    "github>m3t0r/renovate-presets:group-rust-minor"
+  ],
+  "assignees": ["m3t0r"]
 }
