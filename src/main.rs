@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use slog::{Drain, o};
 use clap::{Parser, ValueEnum};
+use slog::{o, Drain};
 
-pub mod smartctl;
-pub mod server;
 pub mod collector;
+pub mod server;
+pub mod smartctl;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 enum InvokerChoice {
@@ -54,29 +54,35 @@ async fn main() {
     // If you can solve this puzzle please let me know!
     let (collector_channel, collector_worker) = match args.invoker {
         InvokerChoice::Standard => {
-            let invoker = smartctl::NormalInvoker{};
+            let invoker = smartctl::NormalInvoker {};
             let mut collector = collector::Collector::with(invoker);
 
             // run once early on to check:
             //  - sudo available and configured
             //  - smartctl installed with json support
             //  - disk access granted
-            collector.collect(&log).await.expect("first S.M.A.R.T. collection failed");
+            collector
+                .collect(&log)
+                .await
+                .expect("first S.M.A.R.T. collection failed");
 
             collector.start_worker(&log)
-        },
+        }
         InvokerChoice::Sudo => {
-            let invoker = smartctl::SudoInvoker{};
+            let invoker = smartctl::SudoInvoker {};
             let mut collector = collector::Collector::with(invoker);
 
             // run once early on to check:
             //  - sudo available and configured
             //  - smartctl installed with json support
             //  - disk access granted
-            collector.collect(&log).await.expect("first S.M.A.R.T. collection failed");
+            collector
+                .collect(&log)
+                .await
+                .expect("first S.M.A.R.T. collection failed");
 
             collector.start_worker(&log)
-        },
+        }
         InvokerChoice::File => {
             let invoker = smartctl::FileInvoker::new(&args.file_invoker_path);
             let mut collector = collector::Collector::with(invoker);
@@ -85,17 +91,17 @@ async fn main() {
             //  - sudo available and configured
             //  - smartctl installed with json support
             //  - disk access granted
-            collector.collect(&log).await.expect("first S.M.A.R.T. collection failed");
+            collector
+                .collect(&log)
+                .await
+                .expect("first S.M.A.R.T. collection failed");
 
             collector.start_worker(&log)
-        },
+        }
     };
 
-    let server = server::Server::new(
-        collector_channel,
-        args.bind_address,
-        &log
-    ).expect("failed to configure server");
+    let server = server::Server::new(collector_channel, args.bind_address, &log)
+        .expect("failed to configure server");
 
     server.run().await.expect("failed to start server");
     collector_worker.await.expect("collector worker error");

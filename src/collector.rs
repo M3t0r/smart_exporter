@@ -1,20 +1,20 @@
 use std::path::PathBuf;
-use std::time::{Instant, Duration};
-use std::sync::atomic::{Ordering, AtomicU64};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
+use prometheus_client::encoding::{text::encode, EncodeLabelSet};
+use prometheus_client::metrics::counter::Counter;
+use prometheus_client::metrics::family::Family;
+use prometheus_client::metrics::gauge::Gauge;
+use prometheus_client::metrics::info::Info;
+use prometheus_client::registry::Registry;
+use slog::{debug, error, info, o};
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
-use prometheus_client::registry::Registry;
-use prometheus_client::encoding::{EncodeLabelSet, text::encode};
-use prometheus_client::metrics::info::Info;
-use prometheus_client::metrics::counter::Counter;
-use prometheus_client::metrics::gauge::Gauge;
-use prometheus_client::metrics::family::Family;
-use slog::{error, info, debug, o};
 
 use crate::smartctl;
-use crate::smartctl::stats::{DeviceStats, Attribute};
+use crate::smartctl::stats::{Attribute, DeviceStats};
 
 use self::prometheus_client_shortcomings::Bool;
 
@@ -24,7 +24,7 @@ pub type CollectResult = Result<String, String>;
 #[derive(Debug)]
 pub struct Collector<I>
 where
-    I: smartctl::SmartctlInvoker + std::fmt::Debug + std::marker::Send
+    I: smartctl::SmartctlInvoker + std::fmt::Debug + std::marker::Send,
 {
     invoker: I,
     registry: Registry,
@@ -37,21 +37,21 @@ where
 
 #[derive(Debug, Default)]
 pub struct Metrics {
-    device_up: Family::<DeviceUpLabels, Gauge>,
-    power_on_hours: Family::<DeviceUnqiueLabels, Counter>,
-    power_cycle_count: Family::<DeviceUnqiueLabels, Counter>,
-    temperature_celsius: Family::<DeviceUnqiueLabels, Gauge>,
-    bytes_total: Family::<DeviceUnqiueLabels, Gauge<f64, AtomicU64>>,
-    blocks_total: Family::<DeviceUnqiueLabels, Gauge<f64, AtomicU64>>,
-    rotations_per_minute: Family::<DeviceUnqiueLabels, Gauge>,
-    logical_block_size: Family::<DeviceUnqiueLabels, Gauge>,
-    physical_block_size: Family::<DeviceUnqiueLabels, Gauge>,
-    interface_bytes_per_unit: Family::<InterfaceSpeedLabels, Gauge>,
-    interface_units_per_second: Family::<InterfaceSpeedLabels, Gauge>,
-    attribute_value: Family::<AttributeLabels, Gauge>,
-    attribute_value_worst: Family::<AttributeLabels, Gauge>,
-    attribute_value_threshold: Family::<AttributeLabels, Gauge>,
-    attribute_value_raw: Family::<AttributeLabels, Gauge<f64, AtomicU64>>,
+    device_up: Family<DeviceUpLabels, Gauge>,
+    power_on_hours: Family<DeviceUnqiueLabels, Counter>,
+    power_cycle_count: Family<DeviceUnqiueLabels, Counter>,
+    temperature_celsius: Family<DeviceUnqiueLabels, Gauge>,
+    bytes_total: Family<DeviceUnqiueLabels, Gauge<f64, AtomicU64>>,
+    blocks_total: Family<DeviceUnqiueLabels, Gauge<f64, AtomicU64>>,
+    rotations_per_minute: Family<DeviceUnqiueLabels, Gauge>,
+    logical_block_size: Family<DeviceUnqiueLabels, Gauge>,
+    physical_block_size: Family<DeviceUnqiueLabels, Gauge>,
+    interface_bytes_per_unit: Family<InterfaceSpeedLabels, Gauge>,
+    interface_units_per_second: Family<InterfaceSpeedLabels, Gauge>,
+    attribute_value: Family<AttributeLabels, Gauge>,
+    attribute_value_worst: Family<AttributeLabels, Gauge>,
+    attribute_value_threshold: Family<AttributeLabels, Gauge>,
+    attribute_value_raw: Family<AttributeLabels, Gauge<f64, AtomicU64>>,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, EncodeLabelSet)]
@@ -75,7 +75,7 @@ struct DeviceUpLabels {
 
 impl From<DeviceStats> for DeviceUpLabels {
     fn from(value: DeviceStats) -> Self {
-        Self { 
+        Self {
             path: String::from(value.device.name.to_string_lossy()),
             protocol: value.device.protocol,
             model_name: value.model_name.clone(),
@@ -85,12 +85,24 @@ impl From<DeviceStats> for DeviceUpLabels {
             wwn_oui: value.wwn.organizationally_unique_identifier,
             wwn_id: value.wwn.id,
             firmware_version: value.firmware_version.clone(),
-            in_smartctl_database: if value.smart_support.enabled { "yes" } else { "no" },
+            in_smartctl_database: if value.smart_support.enabled {
+                "yes"
+            } else {
+                "no"
+            },
             ata_version: value.ata_version.string.clone(),
             sata_version: value.sata_version.string.clone(),
             trim: if value.trim.supported { "yes" } else { "no" },
-            smart_available: if value.smart_support.available { "yes" } else { "no" },
-            smart_enabled: if value.smart_support.enabled { "yes" } else { "no" },
+            smart_available: if value.smart_support.available {
+                "yes"
+            } else {
+                "no"
+            },
+            smart_enabled: if value.smart_support.enabled {
+                "yes"
+            } else {
+                "no"
+            },
         }
     }
 }
@@ -150,8 +162,8 @@ struct InfoLabels {
 
 impl Default for InfoLabels {
     fn default() -> Self {
-        Self{
-            version: env!("CARGO_PKG_VERSION").to_owned(), 
+        Self {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
         }
     }
 }
@@ -169,7 +181,7 @@ impl From<smartctl::scan::Device> for Device {
 
 impl<I> Collector<I>
 where
-    I: smartctl::SmartctlInvoker + std::fmt::Debug + std::marker::Send + 'static
+    I: smartctl::SmartctlInvoker + std::fmt::Debug + std::marker::Send + 'static,
 {
     pub fn with(invoker: I) -> Self {
         let metrics = Metrics::default();
@@ -257,7 +269,7 @@ where
             metrics.attribute_value_raw.clone(),
         );
 
-        Self{
+        Self {
             invoker,
             registry,
             last_read_version: None,
@@ -272,13 +284,16 @@ where
     /// into Prometheus text format
     pub async fn collect(&mut self, log: &slog::Logger) -> CollectResult {
         let now = Instant::now();
-        if self.last_device_scan.is_none() || (now - self.last_device_scan.unwrap() > self.device_rescan_interval) {
+        if self.last_device_scan.is_none()
+            || (now - self.last_device_scan.unwrap() > self.device_rescan_interval)
+        {
             self.last_device_scan = Some(now);
             info!(log, "re-scanning devices");
 
-            let (scan, last_read_version): (smartctl::scan::Scan, _) =
-                self.invoker.call(log, ["--scan-open"])
-                    .map_err(|e| format!("failed to run smartctl: {:?}", e))?;
+            let (scan, last_read_version): (smartctl::scan::Scan, _) = self
+                .invoker
+                .call(log, ["--scan-open"])
+                .map_err(|e| format!("failed to run smartctl: {:?}", e))?;
 
             self.devices = scan.devices.into_iter().map(Into::into).collect();
             self.last_read_version = Some(last_read_version);
@@ -301,50 +316,100 @@ where
             let dev_path = d.name.to_string_lossy();
             info!(log, "collecting stats for device"; "device" => dev_path.as_ref());
 
-            let (stats, _): (smartctl::stats::DeviceStats, _) =
-                self.invoker.call(log, ["--all", dev_path.as_ref()])
+            let (stats, _): (smartctl::stats::DeviceStats, _) = self
+                .invoker
+                .call(log, ["--all", dev_path.as_ref()])
                 .map_err(|e| format!("failed to collect device stats: {:?}", e))?;
 
             let labels = stats.clone().into();
 
-            self.metrics.device_up.get_or_create(&stats.clone().into()).set(1);
+            self.metrics
+                .device_up
+                .get_or_create(&stats.clone().into())
+                .set(1);
 
-            self.metrics.power_on_hours.get_or_create(&labels).inner().store(stats.power_on_time.hours, Ordering::Relaxed);
-            self.metrics.power_cycle_count.get_or_create(&labels).inner().store(stats.power_cycle_count, Ordering::Relaxed);
-            self.metrics.temperature_celsius.get_or_create(&labels).set(stats.temperature.current);
-            self.metrics.bytes_total.get_or_create(&labels).set(stats.user_capacity.bytes as f64);
-            self.metrics.blocks_total.get_or_create(&labels).set(stats.user_capacity.blocks as f64);
-            self.metrics.rotations_per_minute.get_or_create(&labels).set(stats.rotation_rate.into());
-            self.metrics.logical_block_size.get_or_create(&labels).set(stats.logical_block_size.into());
-            self.metrics.physical_block_size.get_or_create(&labels).set(stats.physical_block_size.into());
+            self.metrics
+                .power_on_hours
+                .get_or_create(&labels)
+                .inner()
+                .store(stats.power_on_time.hours, Ordering::Relaxed);
+            self.metrics
+                .power_cycle_count
+                .get_or_create(&labels)
+                .inner()
+                .store(stats.power_cycle_count, Ordering::Relaxed);
+            self.metrics
+                .temperature_celsius
+                .get_or_create(&labels)
+                .set(stats.temperature.current);
+            self.metrics
+                .bytes_total
+                .get_or_create(&labels)
+                .set(stats.user_capacity.bytes as f64);
+            self.metrics
+                .blocks_total
+                .get_or_create(&labels)
+                .set(stats.user_capacity.blocks as f64);
+            self.metrics
+                .rotations_per_minute
+                .get_or_create(&labels)
+                .set(stats.rotation_rate.into());
+            self.metrics
+                .logical_block_size
+                .get_or_create(&labels)
+                .set(stats.logical_block_size.into());
+            self.metrics
+                .physical_block_size
+                .get_or_create(&labels)
+                .set(stats.physical_block_size.into());
 
-            self.metrics.interface_bytes_per_unit.get_or_create(
-                &InterfaceSpeedLabels { path: dev_path.to_string(), interface: "device" }
-            ).set((stats.interface_speed.current.bits_per_unit / 8).into());
-            self.metrics.interface_units_per_second.get_or_create(
-                &InterfaceSpeedLabels { path: dev_path.to_string(), interface: "device" }
-            ).set((stats.interface_speed.current.units_per_second).into());
+            self.metrics
+                .interface_bytes_per_unit
+                .get_or_create(&InterfaceSpeedLabels {
+                    path: dev_path.to_string(),
+                    interface: "device",
+                })
+                .set((stats.interface_speed.current.bits_per_unit / 8).into());
+            self.metrics
+                .interface_units_per_second
+                .get_or_create(&InterfaceSpeedLabels {
+                    path: dev_path.to_string(),
+                    interface: "device",
+                })
+                .set((stats.interface_speed.current.units_per_second).into());
 
-            self.metrics.interface_bytes_per_unit.get_or_create(
-                &InterfaceSpeedLabels { path: dev_path.to_string(), interface: "interface" }
-            ).set((stats.interface_speed.max.bits_per_unit / 8).into());
-            self.metrics.interface_units_per_second.get_or_create(
-                &InterfaceSpeedLabels { path: dev_path.to_string(), interface: "interface" }
-            ).set((stats.interface_speed.max.units_per_second).into());
+            self.metrics
+                .interface_bytes_per_unit
+                .get_or_create(&InterfaceSpeedLabels {
+                    path: dev_path.to_string(),
+                    interface: "interface",
+                })
+                .set((stats.interface_speed.max.bits_per_unit / 8).into());
+            self.metrics
+                .interface_units_per_second
+                .get_or_create(&InterfaceSpeedLabels {
+                    path: dev_path.to_string(),
+                    interface: "interface",
+                })
+                .set((stats.interface_speed.max.units_per_second).into());
 
             for attr in stats.ata_smart_attributes.table {
-                self.metrics.attribute_value.get_or_create(
-                    &AttributeLabels::from(&attr, dev_path.to_string())
-                ).set(attr.current.into());
-                self.metrics.attribute_value_worst.get_or_create(
-                    &AttributeLabels::from(&attr, dev_path.to_string())
-                ).set(attr.worst.into());
-                self.metrics.attribute_value_threshold.get_or_create(
-                    &AttributeLabels::from(&attr, dev_path.to_string())
-                ).set(attr.threshold.into());
-                self.metrics.attribute_value_raw.get_or_create(
-                    &AttributeLabels::from(&attr, dev_path.to_string())
-                ).set(attr.raw.value as f64);
+                self.metrics
+                    .attribute_value
+                    .get_or_create(&AttributeLabels::from(&attr, dev_path.to_string()))
+                    .set(attr.current.into());
+                self.metrics
+                    .attribute_value_worst
+                    .get_or_create(&AttributeLabels::from(&attr, dev_path.to_string()))
+                    .set(attr.worst.into());
+                self.metrics
+                    .attribute_value_threshold
+                    .get_or_create(&AttributeLabels::from(&attr, dev_path.to_string()))
+                    .set(attr.threshold.into());
+                self.metrics
+                    .attribute_value_raw
+                    .get_or_create(&AttributeLabels::from(&attr, dev_path.to_string()))
+                    .set(attr.raw.value as f64);
             }
         }
 
@@ -372,7 +437,7 @@ where
             }
         });
 
-        (Client{channel: tx}, handle)
+        (Client { channel: tx }, handle)
     }
 }
 
@@ -401,12 +466,12 @@ impl Client {
 }
 
 mod prometheus_client_shortcomings {
+    use prometheus_client::encoding::{EncodeLabelValue, LabelValueEncoder};
+    use prometheus_client::metrics::gauge::Atomic;
     /// prometheus_client doesn't implement it's Atomic trait for a couple pairings that we are
     /// using.
     /// EncodeLabelValue isn't implemented for bools either.
-    use std::sync::atomic::{AtomicU64 as OtherAtomicU64, AtomicU16 as OtherAtomicU16, Ordering};
-    use prometheus_client::metrics::gauge::Atomic;
-    use prometheus_client::encoding::{EncodeLabelValue, LabelValueEncoder};
+    use std::sync::atomic::{AtomicU16 as OtherAtomicU16, AtomicU64 as OtherAtomicU64, Ordering};
 
     #[derive(Default, Debug)]
     pub struct AtomicU16(OtherAtomicU16);
