@@ -1,0 +1,126 @@
+version: '3'
+
+set:
+  - errexit
+  - nounset
+  - pipefail
+
+vars:
+  PACKAGE_NAME:
+    sh: cargo metadata --format-version=1 --no-deps | jq -r '.packages[0].name'
+  VERSION:
+    sh: cargo metadata --format-version=1 --no-deps | jq -r '.packages[0].version'
+  IMAGE_REGISTRY: images.lab.m3t0r.de
+  IMAGE_REPOSITORY: '{{.IMAGE_REGISTRY}}/{{.PACKAGE_NAME}}'
+  IMAGE: '{{.IMAGE_REPOSITORY}}:{{.VERSION}}'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmd: task --list
+    silent: true
+
+  ci:
+    desc: Run the CI task set
+    summary: Executes the non-mutating verification tasks and a release build.
+    cmds:
+      - task: check
+      - task: build
+
+  build:
+    desc: Build the project
+    summary: Runs the binary build task as the canonical local build entrypoint.
+    cmds:
+      - task: build:binary
+
+  build:binary:
+    desc: Build the Rust binary in release mode
+    cmd: cargo build --release --locked --color=always
+    preconditions:
+      - sh: command -v cargo >/dev/null
+        msg: cargo is required
+    sources:
+      - Cargo.toml
+      - Cargo.lock
+      - src/**/*.rs
+    generates:
+      - target/release/smart_exporter
+
+  build:image:
+    desc: Build the container image tagged with the Cargo manifest version
+    summary: Uses the package version from cargo metadata and tags the image for images.lab.m3t0r.de.
+    cmd: docker build --build-arg VERSION={{.VERSION}} --build-arg PROFILE=release --tag {{.IMAGE}} .
+    preconditions:
+      - sh: command -v cargo >/dev/null
+        msg: cargo is required
+      - sh: command -v jq >/dev/null
+        msg: jq is required
+      - sh: command -v docker >/dev/null
+        msg: docker is required
+
+  publish:image:
+    desc: Push the versioned container image to images.lab.m3t0r.de
+    summary: Builds the image first so the pushed tag always matches the current Cargo manifest version.
+    cmds:
+      - task: build:image
+      - docker push {{.IMAGE}}
+    preconditions:
+      - sh: command -v cargo >/dev/null
+        msg: cargo is required
+      - sh: command -v jq >/dev/null
+        msg: jq is required
+      - sh: command -v docker >/dev/null
+        msg: docker is required
+
+  check:
+    desc: Run the local verification suite
+    summary: Checks formatting, compilation, linting, and tests without mutating the worktree.
+    cmds:
+      - task: check:fmt
+      - task: check:cargo
+      - task: check:lint
+      - task: check:test
+
+  check:fmt:
+    desc: Verify Rust formatting
+    cmd: cargo fmt --all --check
+    preconditions:
+      - sh: command -v cargo >/dev/null
+        msg: cargo is required
+
+  check:cargo:
+    desc: Run cargo check across all targets
+    cmd: cargo check --locked --all-targets --color=always
+    preconditions:
+      - sh: command -v cargo >/dev/null
+        msg: cargo is required
+
+  check:lint:
+    desc: Run clippy with warnings denied
+    cmd: cargo clippy --locked --all-targets --color=always -- -D warnings
+    preconditions:
+      - sh: command -v cargo >/dev/null
+        msg: cargo is required
+
+  check:test:
+    desc: Run the Rust test suite
+    aliases:
+      - test
+    cmd: cargo test --locked --color=always
+    preconditions:
+      - sh: command -v cargo >/dev/null
+        msg: cargo is required
+
+  fix:fmt:
+    desc: Apply Rust formatting fixes
+    cmd: cargo fmt --all
+    preconditions:
+      - sh: command -v cargo >/dev/null
+        msg: cargo is required
+
+  fix:lint:
+    desc: Apply clippy fixes where available
+    cmd: cargo clippy --fix --allow-dirty --allow-staged --locked --all-targets --color=always -- -D warnings
+    preconditions:
+      - sh: command -v cargo >/dev/null
+        msg: cargo is required

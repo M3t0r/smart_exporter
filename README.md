@@ -15,3 +15,11 @@ curl -sv localhost:9940/metrics
  - https://github.com/prometheus-community/smartctl_exporter
  - https://github.com/cloudandheat/prometheus_smart_exporter
 
+## Taskfile
+
+This repository ships a baseline [`Taskfile.dist.yaml`](Taskfile.dist.yaml).
+Use `task build`, `task check`, `task check:test` (or the `test` alias),
+`task build:image`, and `task publish:image`.
+
+`build:image` and `publish:image` derive the image tag from `Cargo.toml`
+via `cargo metadata` and `jq`, and publish to `images.lab.m3t0r.de`.
