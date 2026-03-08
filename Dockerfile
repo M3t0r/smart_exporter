@@ -1,30 +1,38 @@
-FROM rust:slim-bookworm as builder
-
-ARG VERSION
-ARG TARGETOS TARGETARCH
-
-# could be "dev" for debug builds
-ARG PROFILE=release
+FROM rust:slim-trixie as chef
 
 WORKDIR /src
 
-COPY Cargo.toml Cargo.lock ./
+RUN cargo install --locked cargo-chef
 
-# pre-compile dependencies
-RUN mkdir -p src && \
-    echo 'fn main() {println!("wrong main!");}' > src/main.rs && \
-    cargo build --profile=${PROFILE}
+FROM chef as planner
 
-COPY ./src/ ./src/
-RUN touch ./src/main.rs # tell cargo that the binary is outdated
-RUN cargo build --frozen --color=always --profile=${PROFILE}
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
 
-RUN mv ./target/*/smart_exporter ./
+FROM chef as builder
 
-FROM debian:bookworm as final
+ARG PROFILE=release
+
+COPY --from=planner /src/recipe.json recipe.json
+RUN cargo chef cook \
+    --locked \
+    --bin smart_exporter \
+    --profile=${PROFILE} \
+    --recipe-path recipe.json
+
+COPY . .
+RUN cargo build \
+    --frozen \
+    --locked \
+    --color=always \
+    --bin smart_exporter \
+    --profile=${PROFILE}
+
+FROM debian:trixie as final
 
 ARG VERSION
 ARG TARGETOS TARGETARCH
+ARG PROFILE=release
 
 LABEL application=smart_exporter \
       version=${VERSION} \
@@ -35,9 +43,9 @@ RUN useradd --no-create-home --uid 1000 --gid 1000 smart_exporter
 
 RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
     --mount=target=/var/cache/apt,type=cache,sharing=locked \
-    apt-get update; apt-get install -y smartmontools sudo
+    apt-get update -q; apt-get install -qy smartmontools sudo
 
-COPY --from=builder "/src/smart_exporter" /usr/bin/smart_exporter
+COPY --from=builder "/src/target/${PROFILE}/smart_exporter" /usr/bin/smart_exporter
 
 COPY --chmod=440 ./smart_exporter.sudoers /etc/sudoers.d/smart_exporter
 
