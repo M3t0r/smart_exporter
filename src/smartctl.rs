@@ -1,12 +1,12 @@
-use std::path::{Path, PathBuf};
-use std::vec::Vec;
+use anyhow::{bail, Result};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json;
-use anyhow::{Result, bail};
 use slog::debug;
+use std::path::{Path, PathBuf};
+use std::vec::Vec;
 
-use std::process::Command;
 use std::ffi::OsStr;
+use std::process::Command;
 
 const SUPPORTED_JSON_FORMAT_VERSION: &[u8] = &[1, 0];
 
@@ -38,11 +38,10 @@ pub trait SmartctlInvoker {
         }
 
         let deser = &mut serde_json::Deserializer::from_slice(&output.stdout);
-        let parsed: Output<O> = serde_path_to_error::deserialize(deser)
-            .map_err(|e| {
-                let c = format!("failed to parse smartctl output, JSON path: {}", e.path());
-                anyhow::Error::new(e).context(c)
-            })?;
+        let parsed: Output<O> = serde_path_to_error::deserialize(deser).map_err(|e| {
+            let c = format!("failed to parse smartctl output, JSON path: {}", e.path());
+            anyhow::Error::new(e).context(c)
+        })?;
 
         if parsed.json_format_version != SUPPORTED_JSON_FORMAT_VERSION {
             eprintln!(
@@ -50,7 +49,7 @@ pub trait SmartctlInvoker {
                 parsed
                     .json_format_version
                     .iter()
-                    .map(|i|i.to_string())
+                    .map(|i| i.to_string())
                     .collect::<Vec<_>>()
                     .join(".")
             );
@@ -63,15 +62,14 @@ pub trait SmartctlInvoker {
 #[derive(Debug)]
 pub struct NormalInvoker {}
 
-impl SmartctlInvoker for NormalInvoker{
+impl SmartctlInvoker for NormalInvoker {
     fn construct_command<I, S>(&mut self, _: &slog::Logger, args: I) -> Command
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>
+        S: AsRef<OsStr>,
     {
         let mut cmd = Command::new("smartctl");
-        cmd
-            .env_clear()
+        cmd.env_clear()
             .env("PATH", "/bin/:/sbin/:/usr/bin/:/usr/sbin/")
             .args(["--json"])
             .args(args);
@@ -82,15 +80,14 @@ impl SmartctlInvoker for NormalInvoker{
 #[derive(Debug)]
 pub struct SudoInvoker {}
 
-impl SmartctlInvoker for SudoInvoker{
+impl SmartctlInvoker for SudoInvoker {
     fn construct_command<I, S>(&mut self, _: &slog::Logger, args: I) -> Command
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>
+        S: AsRef<OsStr>,
     {
         let mut cmd = Command::new("sudo");
-        cmd
-            .env_clear()
+        cmd.env_clear()
             .env("PATH", "/bin/:/sbin/:/usr/bin/:/usr/sbin/")
             .args(["--non-interactive", "--"])
             .args(["smartctl", "--json"])
@@ -107,7 +104,10 @@ pub struct FileInvoker {
 
 impl FileInvoker {
     pub fn new(base: &Path) -> Self {
-        FileInvoker { iteration: 0, base: base.to_owned() }
+        FileInvoker {
+            iteration: 0,
+            base: base.to_owned(),
+        }
     }
 }
 
@@ -115,16 +115,21 @@ impl SmartctlInvoker for FileInvoker {
     fn construct_command<I, S>(&mut self, log: &slog::Logger, args: I) -> Command
     where
         I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>
+        S: AsRef<OsStr>,
     {
-        let mut normalized_arg: String = args.into_iter()
-            .fold(String::new(), |acc, arg| acc + &arg.as_ref().to_string_lossy() + "_")
+        let mut normalized_arg: String = args
+            .into_iter()
+            .fold(String::new(), |acc, arg| {
+                acc + &arg.as_ref().to_string_lossy() + "_"
+            })
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() {c} else  {'_'})
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
             .collect();
         normalized_arg.pop(); // remove last '_'
 
-        let indexed = self.base.join(format!("{}/{}", self.iteration, normalized_arg));
+        let indexed = self
+            .base
+            .join(format!("{}/{}", self.iteration, normalized_arg));
         let unindexed = self.base.join(normalized_arg);
 
         let [stdout, stderr, exit] = ["stdout", "stderr", "exit"].map(|suffix| {
@@ -136,21 +141,22 @@ impl SmartctlInvoker for FileInvoker {
             }
         });
 
-        let cmds = [&stdout, &stderr, &exit].iter().zip(&[
+        let cmds = [&stdout, &stderr, &exit]
+            .iter()
+            .zip(&[
                 format!("cat {}", stdout.display()),
                 format!("cat {} 1>&2", stderr.display()),
                 format!("exit $(cat {})", exit.display()),
             ])
             .filter(|(f, _)| f.is_file())
             .map(|(_, cmd)| cmd.clone())
-            .collect::<Vec::<_>>()
+            .collect::<Vec<_>>()
             .join("; ");
 
         debug!(log, "Reading smartctl output from file"; "folder" => self.base.display(), "iteration" => self.iteration, "replacement command" => &cmds);
 
         let mut cmd = Command::new("sh");
-        cmd
-            .env_clear()
+        cmd.env_clear()
             .env("PATH", "/bin/:/sbin/:/usr/bin/:/usr/sbin/")
             .args(["-c", &cmds]);
         cmd
@@ -195,7 +201,17 @@ pub enum Type {
     Nvme,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, Hash, PartialEq, Eq, prometheus_client::encoding::EncodeLabelValue)]
+#[derive(
+    Debug,
+    Deserialize,
+    Serialize,
+    Clone,
+    Copy,
+    Hash,
+    PartialEq,
+    Eq,
+    prometheus_client::encoding::EncodeLabelValue,
+)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Protocol {
     Ata,
@@ -205,8 +221,8 @@ pub enum Protocol {
 
 pub mod scan {
     pub use crate::smartctl::Device;
-    use std::vec::Vec;
     use serde::{Deserialize, Serialize};
+    use std::vec::Vec;
 
     #[derive(Debug, Deserialize, Serialize, Clone)]
     pub struct Scan {
@@ -215,9 +231,9 @@ pub mod scan {
 }
 
 pub mod stats {
-    use std::collections::HashMap;
-    use serde::{Deserialize, Serialize};
     pub use crate::smartctl::Device;
+    use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
 
     #[derive(Debug, Deserialize, Serialize, Clone)]
     pub struct DeviceStats {
@@ -241,7 +257,6 @@ pub mod stats {
         // pub ata_smart_error_log: String,
         // pub ata_smart_selective_self_test_log: String,
         // pub ata_smart_self_test_log: String,
-
         pub power_on_time: PowerOnTime,
         pub power_cycle_count: u64,
         pub temperature: Temperature,
@@ -253,7 +268,6 @@ pub mod stats {
         pub physical_block_size: u16,
 
         // intentionally unused fields: local_time
-
         #[serde(flatten)]
         pub extra_fields: HashMap<String, serde_json::Value>,
     }
@@ -276,9 +290,9 @@ pub mod stats {
     #[derive(Debug, Deserialize, Serialize, Clone)]
     pub struct ATAVersion {
         pub string: String,
-        #[serde(rename="major_value")]
+        #[serde(rename = "major_value")]
         pub major: u64,
-        #[serde(rename="minor_value")]
+        #[serde(rename = "minor_value")]
         pub minor: u64,
     }
 
@@ -304,10 +318,10 @@ pub mod stats {
     pub struct Attribute {
         pub id: u16,
         pub name: String,
-        #[serde(rename="value")]
+        #[serde(rename = "value")]
         pub current: u8,
         pub worst: u8,
-        #[serde(rename="thresh")]
+        #[serde(rename = "thresh")]
         pub threshold: u8,
         pub flags: Flags,
         pub raw: RawAttributeValue,
@@ -367,9 +381,12 @@ pub mod stats {
 
 #[cfg(test)]
 mod test {
-    use std::{path::{Path, PathBuf}, ffi::OsStr};
-    use std::io::BufReader;
     use std::fs::File;
+    use std::io::BufReader;
+    use std::{
+        ffi::OsStr,
+        path::{Path, PathBuf},
+    };
 
     use anyhow::anyhow;
 
@@ -409,10 +426,18 @@ mod test {
 
             // https://en.wikipedia.org/wiki/World_Wide_Name
             let wwn = json.pointer("/wwn/id");
-            assert!(wwn.is_none() || wwn.unwrap().as_i64() == Some(0), "World Wide Name found: {}", f.display());
+            assert!(
+                wwn.is_none() || wwn.unwrap().as_i64() == Some(0),
+                "World Wide Name found: {}",
+                f.display()
+            );
 
             let serial = json.pointer("/serial_number");
-            assert!(serial.is_none() || serial.unwrap().as_str() == Some(""), "Serial Number found: {}", f.display());
+            assert!(
+                serial.is_none() || serial.unwrap().as_str() == Some(""),
+                "Serial Number found: {}",
+                f.display()
+            );
         }
         Ok(())
     }
@@ -422,7 +447,9 @@ mod test {
         let log = crate::make_logger();
         let mut invoker = super::FileInvoker::new(Path::new("tests/simple/"));
 
-        let (scan, version): (crate::smartctl::scan::Scan, _) = invoker.call(&log, ["--scan-open"]).expect("could not parse simple/ scan");
+        let (scan, version): (crate::smartctl::scan::Scan, _) = invoker
+            .call(&log, ["--scan-open"])
+            .expect("could not parse simple/ scan");
 
         assert_eq!(version.version, vec![7, 4]);
         assert_eq!(scan.devices.len(), 5);
@@ -433,7 +460,8 @@ mod test {
         let log = crate::make_logger();
         let mut invoker = super::FileInvoker::new(Path::new("tests/failed_scan/"));
 
-        let r: anyhow::Result<(crate::smartctl::scan::Scan, _)> = invoker.call(&log, ["--scan-open"]);
+        let r: anyhow::Result<(crate::smartctl::scan::Scan, _)> =
+            invoker.call(&log, ["--scan-open"]);
 
         assert!(r.is_err());
     }
@@ -443,16 +471,24 @@ mod test {
         let log = crate::make_logger();
         let mut invoker = super::FileInvoker::new(Path::new("tests/simple/"));
 
-        let (_scan, _version): (crate::smartctl::scan::Scan, _) = invoker.call(&log, ["--scan-open"]).expect("could not parse simple/ scan");
+        let (_scan, _version): (crate::smartctl::scan::Scan, _) = invoker
+            .call(&log, ["--scan-open"])
+            .expect("could not parse simple/ scan");
     }
 
     #[test]
     fn parse_device_stats() {
         let log = crate::make_logger();
         let mut invoker = super::FileInvoker::new(Path::new("tests/simple/"));
-        let (scan, _): (crate::smartctl::scan::Scan, _) = invoker.call(&log, ["--scan-open"]).expect("could not parse simple/ scan");
+        let (scan, _): (crate::smartctl::scan::Scan, _) = invoker
+            .call(&log, ["--scan-open"])
+            .expect("could not parse simple/ scan");
 
-        for dev in scan.devices.iter().map(|d| d.name.as_os_str().to_string_lossy()) {
+        for dev in scan
+            .devices
+            .iter()
+            .map(|d| d.name.as_os_str().to_string_lossy())
+        {
             let (stats, _version): (crate::smartctl::stats::DeviceStats, _) = invoker
                 .call(&log, ["--all", &dev])
                 .expect(format!("could not parse simple/ stats for {}", dev).as_str());
