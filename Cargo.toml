@@ -9,7 +9,7 @@ authors = ["Simon Brüggen"]
 [dependencies]
 anyhow = "1.0.75"
 clap = { version = "4.4.18", features = ["derive"] }
-dropshot = "0.16.7"
+dropshot = "0.17.0"
 http = "1.4.0"
 prometheus-client = "0.24"
 serde = { version = "1.0", features = ["derive"] }
