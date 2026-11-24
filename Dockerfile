@@ -1,4 +1,4 @@
-FROM rust:slim-trixie@sha256:7d3701660d2aa7101811ba0c54920021452aa60e5bae073b79c2b137a432b2f4 as chef
+FROM rust:slim-trixie@sha256:3b199fd6db7d709274df56565b8f4003f9e30d7bfcff9d53148c86053b7855e2 as chef
 
 WORKDIR /src
 ENV CARGO_TERM_COLOR=always
