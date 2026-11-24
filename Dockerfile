@@ -28,7 +28,7 @@ RUN cargo build \
     --bin smart_exporter \
     --profile=${PROFILE}
 
-FROM debian:trixie@sha256:3615a749858a1cba49b408fb49c37093db813321355a9ab7c1f9f4836341e9db as final
+FROM debian:trixie@sha256:3cda3ca472ce45507a5109c6a3907093e24d9ae67d55954c9a07a45665dafba2 as final
 
 ARG PROFILE=release
 
